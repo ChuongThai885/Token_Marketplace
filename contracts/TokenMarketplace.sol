@@ -7,9 +7,14 @@ error TokenMarketplace__InsufficientAmount();
 error TokenMarketplace__InvalidPrice();
 error TokenMarketplace__InsufficientAllowance();
 error TokenMarketplace__NotOwner();
+error TokenMarketplace__SellOrderExisted();
+error TokenMarketplace__BuyOrderExisted();
+error TokenMarketplace__BuyOrderNotExist();
+error TokenMarketplace__SellOrderNotExist();
 
 /**
  * @title A simple version of token marketplace
+ * @author Chuong Thai
  * @notice This contract for creating a token marketplace with simple order matching algorithm
  */
 contract TokenMarketplace {
@@ -50,6 +55,8 @@ contract TokenMarketplace {
      * Emits a {OrderPlaced} event
      */
     function placeSellOrder(address tokenAddress, uint256 amount, uint256 totalPrice) external {
+        OrderDetail storage sellOrderDetailBook = _sellOrderDetailBook[msg.sender][tokenAddress];
+        if (_isExistingOrder(sellOrderDetailBook)) revert TokenMarketplace__SellOrderExisted();
         IERC20Extended token = IERC20Extended(tokenAddress);
         uint256 price = _getPrice(token, amount, totalPrice);
 
@@ -58,11 +65,12 @@ contract TokenMarketplace {
         IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
 
         _userSellOrders.push(UserOrder(msg.sender, tokenAddress));
-        _sellOrderDetailBook[msg.sender][tokenAddress] = OrderDetail(amount, price);
+        sellOrderDetailBook.amount = amount;
+        sellOrderDetailBook.price = price;
 
         emit OrderPlaced(msg.sender, tokenAddress, amount, price, false);
 
-        matchOrder(msg.sender, tokenAddress, false);
+        _matchOrder(msg.sender, tokenAddress, false);
     }
 
     /**
@@ -71,15 +79,97 @@ contract TokenMarketplace {
      * Emits a {OrderPlaced} event
      */
     function placeBuyOrder(address tokenAddress, uint256 amount) external payable {
+        OrderDetail storage buyOrderDetailBook = _buyOrderDetailBook[msg.sender][tokenAddress];
+        if (_isExistingOrder(buyOrderDetailBook)) revert TokenMarketplace__BuyOrderExisted();
         IERC20Extended token = IERC20Extended(tokenAddress);
         uint256 price = _getPrice(token, amount, msg.value);
 
         _userBuyOrders.push(UserOrder(msg.sender, tokenAddress));
-        _buyOrderDetailBook[msg.sender][tokenAddress] = OrderDetail(amount, price);
+        buyOrderDetailBook.amount = amount;
+        buyOrderDetailBook.price = price;
 
         emit OrderPlaced(msg.sender, tokenAddress, amount, price, true);
 
-        matchOrder(msg.sender, tokenAddress, true);
+        _matchOrder(msg.sender, tokenAddress, true);
+    }
+
+    /**
+     * @dev remove order out of order book and send back money or token to owner
+     */
+    function cancelOrder(address owner, address tokenAddress, bool isBuyOrder) external {
+        if (msg.sender != owner) revert TokenMarketplace__NotOwner();
+        UserOrder[] memory orderBook = isBuyOrder ? _userBuyOrders : _userSellOrders;
+        OrderDetail memory orderDetailBook = isBuyOrder
+            ? _buyOrderDetailBook[owner][tokenAddress]
+            : _sellOrderDetailBook[owner][tokenAddress];
+        if (!_isExistingOrder(orderDetailBook)) {
+            if (isBuyOrder) revert TokenMarketplace__BuyOrderNotExist();
+            else revert TokenMarketplace__SellOrderNotExist();
+        }
+
+        uint256 index;
+        for (index = 0; index < orderBook.length; index += 1) {
+            if (orderBook[index].owner != owner || orderBook[index].tokenAddress != tokenAddress)
+                continue;
+
+            if (isBuyOrder) {
+                _transferBuyMoney(owner, owner, tokenAddress, orderDetailBook.amount);
+            } else {
+                _transferSaleToken(owner, tokenAddress, orderDetailBook.amount);
+            }
+            _removeOrder(owner, tokenAddress, orderBook, index, isBuyOrder);
+            break;
+        }
+    }
+
+    /**
+     * @dev return detail sell order
+     */
+    function getSellOrder(
+        address owner,
+        address tokenAddress
+    ) external view returns (OrderDetail memory) {
+        OrderDetail memory orderDetailBook = _sellOrderDetailBook[owner][tokenAddress];
+        if (!_isExistingOrder(orderDetailBook)) revert TokenMarketplace__SellOrderNotExist();
+        return orderDetailBook;
+    }
+
+    /**
+     * @dev return detail buy order
+     */
+    function getBuyOrder(
+        address owner,
+        address tokenAddress
+    ) external view returns (OrderDetail memory) {
+        OrderDetail memory orderDetailBook = _buyOrderDetailBook[owner][tokenAddress];
+        if (!_isExistingOrder(orderDetailBook)) revert TokenMarketplace__BuyOrderNotExist();
+        return orderDetailBook;
+    }
+
+    /**
+     * @dev check if order is still on orderbook
+     */
+    function isOnOrderBook(
+        address owner,
+        address tokenAddress,
+        bool isBuyOrder
+    ) external view returns (bool) {
+        UserOrder[] memory userOrder = isBuyOrder ? _userBuyOrders : _userSellOrders;
+        bool isOnOrder = false;
+        for (uint256 index = 0; index < userOrder.length; index += 1) {
+            UserOrder memory order = userOrder[index];
+            if (order.owner != owner || order.tokenAddress != tokenAddress) continue;
+            isOnOrder = true;
+            break;
+        }
+        return isOnOrder;
+    }
+
+    /**
+     * @dev check if order is existing or not
+     */
+    function _isExistingOrder(OrderDetail memory orderDetailBook) internal pure returns (bool) {
+        return orderDetailBook.price != 0 || orderDetailBook.amount != 0;
     }
 
     /**
@@ -89,15 +179,15 @@ contract TokenMarketplace {
      * Remove all order has amount=0 out of order book
      * Emit {OrderMatched} event
      */
-    function matchOrder(address owner, address tokenAddress, bool isBuyOrder) internal {
+    function _matchOrder(address owner, address tokenAddress, bool isBuyOrder) internal {
         OrderDetail storage order = isBuyOrder
             ? _buyOrderDetailBook[owner][tokenAddress]
             : _sellOrderDetailBook[owner][tokenAddress];
-        UserOrder[] storage userOrders = isBuyOrder ? _userSellOrders : _userBuyOrders;
+        UserOrder[] memory userOrders = isBuyOrder ? _userSellOrders : _userBuyOrders;
 
         for (uint256 i = 0; i < userOrders.length; i += 1) {
             UserOrder memory potentialUserOrder = userOrders[i];
-            OrderDetail storage potentialOrderMatch = isBuyOrder
+            OrderDetail memory potentialOrderMatch = isBuyOrder
                 ? _sellOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
                 : _buyOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress];
             if (order.price != potentialOrderMatch.price) continue;
@@ -107,7 +197,13 @@ contract TokenMarketplace {
             address seller = isBuyOrder ? potentialUserOrder.owner : owner;
             _transferSaleToken(buyer, tokenAddress, tradeAmount);
             _transferBuyMoney(buyer, seller, tokenAddress, tradeAmount);
-            potentialOrderMatch.amount -= tradeAmount;
+            if (isBuyOrder) {
+                _sellOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
+                    .amount -= tradeAmount;
+            } else {
+                _buyOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
+                    .amount -= tradeAmount;
+            }
             order.amount -= tradeAmount;
 
             emit OrderMatched(
@@ -118,43 +214,19 @@ contract TokenMarketplace {
                 order.price,
                 isBuyOrder
             );
-            if (potentialOrderMatch.amount == 0) {
+            if (potentialOrderMatch.amount - tradeAmount == 0) {
                 _removeOrder(potentialUserOrder.owner, tokenAddress, userOrders, i, !isBuyOrder);
             }
             if (order.amount == 0) {
-                _removeOrder(owner, tokenAddress, userOrders, 0, isBuyOrder);
+                _removeOrder(
+                    owner,
+                    tokenAddress,
+                    isBuyOrder ? _userBuyOrders : _userSellOrders,
+                    0,
+                    isBuyOrder
+                );
                 break;
             }
-        }
-    }
-
-    /**
-     * @dev remove order out of order book and send back money or token to owner
-     */
-    function cancelOrder(address owner, address tokenAddress, bool isBuyOrder) external {
-        if (msg.sender != owner) revert TokenMarketplace__NotOwner();
-        UserOrder[] storage orderBook = isBuyOrder ? _userBuyOrders : _userSellOrders;
-        uint256 index;
-        for (index = 0; index < orderBook.length; index += 1) {
-            if (orderBook[index].owner != owner || orderBook[index].tokenAddress != tokenAddress)
-                continue;
-
-            if (isBuyOrder) {
-                _transferBuyMoney(
-                    owner,
-                    owner,
-                    tokenAddress,
-                    _buyOrderDetailBook[owner][tokenAddress].amount
-                );
-            } else {
-                _transferSaleToken(
-                    owner,
-                    tokenAddress,
-                    _sellOrderDetailBook[owner][tokenAddress].amount
-                );
-            }
-            _removeOrder(owner, tokenAddress, orderBook, index, isBuyOrder);
-            break;
         }
     }
 
@@ -165,7 +237,7 @@ contract TokenMarketplace {
     function _removeOrder(
         address owner,
         address tokenAddress,
-        UserOrder[] storage orderBook,
+        UserOrder[] memory orderBook,
         uint256 index,
         bool isBuyOrder
     ) internal {
@@ -173,11 +245,12 @@ contract TokenMarketplace {
             if (orderBook[index].owner != owner || orderBook[index].tokenAddress != tokenAddress)
                 continue;
             // delete order
+            UserOrder[] storage _orderBook = isBuyOrder ? _userBuyOrders : _userSellOrders;
             for (; index < orderBook.length - 1; index += 1) {
-                orderBook[index] = orderBook[index + 1];
+                _orderBook[index] = orderBook[index + 1];
             }
-            delete orderBook[orderBook.length - 1];
-            orderBook.pop();
+            delete _orderBook[orderBook.length - 1];
+            _orderBook.pop();
 
             if (isBuyOrder) {
                 delete _buyOrderDetailBook[owner][tokenAddress];
@@ -190,26 +263,6 @@ contract TokenMarketplace {
     }
 
     /**
-     * @dev return detail sell order
-     */
-    function getSellOrder(
-        address owner,
-        address tokenAddress
-    ) external view returns (OrderDetail memory) {
-        return _sellOrderDetailBook[owner][tokenAddress];
-    }
-
-    /**
-     * @dev return detail buy order
-     */
-    function getBuyOrder(
-        address owner,
-        address tokenAddress
-    ) external view returns (OrderDetail memory) {
-        return _buyOrderDetailBook[owner][tokenAddress];
-    }
-
-    /**
      * @dev transfer token with amount
      */
     function _transferSaleToken(address to, address tokenAddress, uint256 amount) internal {
@@ -217,7 +270,7 @@ contract TokenMarketplace {
     }
 
     /**
-     * dev transfer money base on token amount and price in order book
+     * @dev transfer money base on token amount and price in order book
      */
     function _transferBuyMoney(
         address owner,
@@ -226,8 +279,8 @@ contract TokenMarketplace {
         uint amount
     ) internal {
         (bool callSuccess, ) = payable(to).call{
-            value: (_buyOrderDetailBook[owner][tokenAddress].price * amount) /
-                IERC20Extended(tokenAddress).decimals()
+            value: _buyOrderDetailBook[owner][tokenAddress].price *
+                (amount / (10 ** IERC20Extended(tokenAddress).decimals()))
         }("");
         require(callSuccess);
     }
@@ -241,9 +294,9 @@ contract TokenMarketplace {
         uint256 amount,
         uint256 totalPrice
     ) internal view returns (uint256) {
-        if (amount < 0 || amount % token.decimals() != 0)
+        if (amount < 0 || amount % (10 ** token.decimals()) != 0)
             revert TokenMarketplace__InsufficientAmount();
-        uint256 _amount = amount / token.decimals();
+        uint256 _amount = amount / (10 ** token.decimals());
         if (totalPrice < 0 || totalPrice % _amount != 0) revert TokenMarketplace__InvalidPrice();
         return totalPrice / _amount;
     }

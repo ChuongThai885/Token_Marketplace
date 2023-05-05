@@ -3,9 +3,9 @@ const { developmentChains } = require("../helper-hardhat-config")
 const { verify } = require("../utils/verify")
 
 module.exports = async ({ getNamedAccounts, deployments }) => {
-    const { deploy, log } = deployments
+    const { deploy } = deployments
     const { deployer } = await getNamedAccounts()
-    const marketplace = await deploy("TokenMarketplace", {
+    await deploy("TokenMarketplace", {
         from: deployer,
         args: [],
         log: true,
