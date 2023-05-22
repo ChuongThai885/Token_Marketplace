@@ -11,7 +11,11 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
         log: true,
         waitConfirmations: network.config.blockConfirmations || 1,
     })
-    if (!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
+    if (
+        !developmentChains.includes(network.name) &&
+        network.name !== "privnet" &&
+        process.env.ETHERSCAN_API_KEY
+    ) {
         await verify(customToken.address, [INITIAL_SUPPLY])
     }
 }

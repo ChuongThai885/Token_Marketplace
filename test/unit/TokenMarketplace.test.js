@@ -25,7 +25,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
               it("Place sell order", async () => {
                   await customToken.approve(marketplace.address, tokenAmount)
                   await marketplace.placeSellOrder(customToken.address, tokenAmount, totalPrice)
-                  const { amount, price } = await marketplace.getSellOrder(
+                  const { amount, price } = await marketplace.getDetailSellOrder(
                       deployer,
                       customToken.address
                   )
@@ -43,7 +43,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
                   await marketplace.placeBuyOrder(customToken.address, tokenAmount, {
                       value: totalPrice,
                   })
-                  const { amount, price } = await marketplace.getBuyOrder(
+                  const { amount, price } = await marketplace.getDetailBuyOrder(
                       deployer,
                       customToken.address
                   )
@@ -138,7 +138,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
                       await marketplace.isOnOrderBook(user1, customToken.address, true),
                       false
                   )
-                  const { amount } = await marketplace.getBuyOrder(user2, customToken.address)
+                  const { amount } = await marketplace.getDetailBuyOrder(user2, customToken.address)
                   assert.equal(amount.add(addingAmount).toString(), tokenAmount.toString())
               })
               it("Emits an OrderMatched event when orders matched", async () => {

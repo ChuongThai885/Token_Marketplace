@@ -8,7 +8,7 @@ const {
 
 module.exports = async ({ getNamedAccounts, deployments }) => {
     const { deploy } = deployments
-    const { deployer } = await getNamedAccounts()
+    const { deployer, user1 } = await getNamedAccounts()
 
     if (developmentChains.includes(network.name)) {
         await deploy("CustomToken", {
@@ -21,4 +21,4 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
     }
 }
 
-module.exports.tags = ["all", "mocks"]
+module.exports.tags = ["all", "CustomToken"]

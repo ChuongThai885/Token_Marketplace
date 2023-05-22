@@ -11,6 +11,7 @@ error TokenMarketplace__SellOrderExisted();
 error TokenMarketplace__BuyOrderExisted();
 error TokenMarketplace__BuyOrderNotExist();
 error TokenMarketplace__SellOrderNotExist();
+error TokenMarketplace__InvalidIndex();
 
 /**
  * @title A simple version of token marketplace
@@ -125,7 +126,7 @@ contract TokenMarketplace {
     /**
      * @dev return detail sell order
      */
-    function getSellOrder(
+    function getDetailSellOrder(
         address owner,
         address tokenAddress
     ) external view returns (OrderDetail memory) {
@@ -137,13 +138,39 @@ contract TokenMarketplace {
     /**
      * @dev return detail buy order
      */
-    function getBuyOrder(
+    function getDetailBuyOrder(
         address owner,
         address tokenAddress
     ) external view returns (OrderDetail memory) {
         OrderDetail memory orderDetailBook = _buyOrderDetailBook[owner][tokenAddress];
         if (!_isExistingOrder(orderDetailBook)) revert TokenMarketplace__BuyOrderNotExist();
         return orderDetailBook;
+    }
+
+    /**
+     * @dev return number of buy order
+     */
+    function getBuyOrderCount() external view returns (uint256) {
+        return _userBuyOrders.length;
+    }
+
+    /**
+     * @dev return number of sell order
+     */
+    function getSellOrderCount() external view returns (uint256) {
+        return _userSellOrders.length;
+    }
+
+    /**
+     * @dev return user order
+     */
+    function getUserOrder(
+        uint256 orderIndex,
+        bool isBuyOrder
+    ) external view returns (UserOrder memory) {
+        uint256 orderLength = isBuyOrder ? _userBuyOrders.length : _userSellOrders.length;
+        if (orderIndex >= orderLength) revert TokenMarketplace__InvalidIndex();
+        return isBuyOrder ? _userBuyOrders[orderIndex] : _userSellOrders[orderIndex];
     }
 
     /**
@@ -297,7 +324,7 @@ contract TokenMarketplace {
         if (amount < 0 || amount % (10 ** token.decimals()) != 0)
             revert TokenMarketplace__InsufficientAmount();
         uint256 _amount = amount / (10 ** token.decimals());
-        if (totalPrice < 0 || totalPrice % _amount != 0) revert TokenMarketplace__InvalidPrice();
+        if (totalPrice == 0 || totalPrice % _amount != 0) revert TokenMarketplace__InvalidPrice();
         return totalPrice / _amount;
     }
 
