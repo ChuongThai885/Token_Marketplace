@@ -108,8 +108,7 @@ contract TokenMarketplace {
             else revert TokenMarketplace__SellOrderNotExist();
         }
 
-        uint256 index;
-        for (index = 0; index < orderBook.length; index += 1) {
+        for (uint256 index = 0; index < orderBook.length; index += 1) {
             if (orderBook[index].owner != owner || orderBook[index].tokenAddress != tokenAddress)
                 continue;
 
@@ -224,14 +223,17 @@ contract TokenMarketplace {
             address seller = isBuyOrder ? potentialUserOrder.owner : owner;
             _transferSaleToken(buyer, tokenAddress, tradeAmount);
             _transferBuyMoney(buyer, seller, tokenAddress, tradeAmount);
-            if (isBuyOrder) {
-                _sellOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
-                    .amount -= tradeAmount;
-            } else {
-                _buyOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
-                    .amount -= tradeAmount;
+
+            unchecked {
+                if (isBuyOrder) {
+                    _sellOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
+                        .amount -= tradeAmount;
+                } else {
+                    _buyOrderDetailBook[potentialUserOrder.owner][potentialUserOrder.tokenAddress]
+                        .amount -= tradeAmount;
+                }
+                order.amount -= tradeAmount;
             }
-            order.amount -= tradeAmount;
 
             emit OrderMatched(
                 owner,
@@ -305,10 +307,13 @@ contract TokenMarketplace {
         address tokenAddress,
         uint amount
     ) internal {
-        (bool callSuccess, ) = payable(to).call{
-            value: _buyOrderDetailBook[owner][tokenAddress].price *
-                (amount / (10 ** IERC20Extended(tokenAddress).decimals()))
-        }("");
+        uint256 totalPrice;
+        unchecked {
+            totalPrice =
+                _buyOrderDetailBook[owner][tokenAddress].price *
+                (amount / (10 ** IERC20Extended(tokenAddress).decimals()));
+        }
+        (bool callSuccess, ) = payable(to).call{value: totalPrice}("");
         require(callSuccess);
     }
 
@@ -321,11 +326,19 @@ contract TokenMarketplace {
         uint256 amount,
         uint256 totalPrice
     ) internal view returns (uint256) {
-        if (amount < 0 || amount % (10 ** token.decimals()) != 0)
-            revert TokenMarketplace__InsufficientAmount();
-        uint256 _amount = amount / (10 ** token.decimals());
+        uint256 decimals;
+        unchecked {
+            decimals = (10 ** token.decimals());
+        }
+        if (amount == 0 || amount % decimals != 0) revert TokenMarketplace__InsufficientAmount();
+        uint256 _amount;
+        unchecked {
+            _amount = amount / decimals;
+        }
         if (totalPrice == 0 || totalPrice % _amount != 0) revert TokenMarketplace__InvalidPrice();
-        return totalPrice / _amount;
+        unchecked {
+            return totalPrice / _amount;
+        }
     }
 
     /**

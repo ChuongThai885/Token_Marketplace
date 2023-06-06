@@ -8,7 +8,7 @@ const {
 
 module.exports = async ({ getNamedAccounts, deployments }) => {
     const { deploy } = deployments
-    const { deployer, user1 } = await getNamedAccounts()
+    const { deployer } = await getNamedAccounts()
 
     if (developmentChains.includes(network.name)) {
         await deploy("CustomToken", {
