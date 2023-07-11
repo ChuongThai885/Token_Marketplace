@@ -33,7 +33,8 @@ contract TokenMarketplace {
         address indexed tokenAddress,
         uint256 amount,
         uint256 price,
-        bool isBuyOrder
+        bool isBuyOrder,
+        uint256 timestamp
     );
     event OrderMatched(
         address indexed owner,
@@ -41,9 +42,15 @@ contract TokenMarketplace {
         address indexed tokenAddress,
         uint256 amount,
         uint256 price,
-        bool isBuyOrder
+        bool isBuyOrder,
+        uint256 timestamp
     );
-    event OrderCanceled(address indexed owner, address indexed tokenAddress, bool isBuyOrder);
+    event OrderCanceled(
+        address indexed owner,
+        address indexed tokenAddress,
+        bool isBuyOrder,
+        uint256 timestamp
+    );
 
     UserOrder[] private _userSellOrders;
     UserOrder[] private _userBuyOrders;
@@ -69,7 +76,7 @@ contract TokenMarketplace {
         sellOrderDetailBook.amount = amount;
         sellOrderDetailBook.price = price;
 
-        emit OrderPlaced(msg.sender, tokenAddress, amount, price, false);
+        emit OrderPlaced(msg.sender, tokenAddress, amount, price, false, block.timestamp);
 
         _matchOrder(msg.sender, tokenAddress, false);
     }
@@ -89,7 +96,7 @@ contract TokenMarketplace {
         buyOrderDetailBook.amount = amount;
         buyOrderDetailBook.price = price;
 
-        emit OrderPlaced(msg.sender, tokenAddress, amount, price, true);
+        emit OrderPlaced(msg.sender, tokenAddress, amount, price, true, block.timestamp);
 
         _matchOrder(msg.sender, tokenAddress, true);
     }
@@ -241,7 +248,8 @@ contract TokenMarketplace {
                 tokenAddress,
                 tradeAmount,
                 order.price,
-                isBuyOrder
+                isBuyOrder,
+                block.timestamp
             );
             if (potentialOrderMatch.amount - tradeAmount == 0) {
                 _removeOrder(potentialUserOrder.owner, tokenAddress, userOrders, i, !isBuyOrder);
@@ -286,7 +294,7 @@ contract TokenMarketplace {
             } else {
                 delete _sellOrderDetailBook[owner][tokenAddress];
             }
-            emit OrderCanceled(owner, tokenAddress, isBuyOrder);
+            emit OrderCanceled(owner, tokenAddress, isBuyOrder, block.timestamp);
             break;
         }
     }
